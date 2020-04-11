@@ -99,3 +99,79 @@ end
     @test MOI.get(o, MOI.ObjectiveValue()) ≈ 12.5
     @test MOI.get(o, MOI.SimplexIterations()) > 0
 end
+
+@testset "Get row and column constraints" begin
+    o = HiGHS.Optimizer()
+    x1 = MOI.add_variable(o)
+    MOI.add_constraint(o, MOI.SingleVariable(x1), MOI.Interval(0.0, 1.0))
+    (x2, _) = MOI.add_constrained_variable(o, MOI.Interval(-1.0, 1.0))
+    c1 = MOI.add_constraint(o,
+        MOI.ScalarAffineFunction([
+                MOI.ScalarAffineTerm(3.0, x1),
+                MOI.ScalarAffineTerm(2.0, x2),
+            ], 0.0),
+        MOI.Interval(-0.5, 6.0),
+    )
+    c2 = MOI.add_constraint(o,
+        MOI.ScalarAffineFunction([
+                MOI.ScalarAffineTerm(3.0, x1),
+                MOI.ScalarAffineTerm(5.0, x2),
+            ], 0.0),
+        MOI.Interval(-0.8, 2.0),
+    )
+    MOI.set(o,
+        MOI.ObjectiveFunction{MOI.ScalarAffineFunction{Float64}}(),
+        MOI.ScalarAffineFunction([
+                MOI.ScalarAffineTerm(1.0, x1),
+                MOI.ScalarAffineTerm(1.0, x2),
+            ], 0.0),
+    )
+    MOI.set(o, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+    MOI.optimize!(o)
+    @test 2 == MOI.get(o, MOI.NumberOfConstraints{MOI.ScalarAffineFunction{Float64}, MOI.Interval{Float64}}())
+    num_row = Ref{Cint}(33)
+    lower = Vector{Cdouble}(undef, 10) .* 0
+    upper = Vector{Cdouble}(undef, 10) .* 0
+    num_nz = Ref{Cint}(2)
+    matrix_start = Cint[32, 22, 0, 0, 0]
+    matrix_index = Vector{Cint}(undef, 10) .* 0
+    matrix_value = Vector{Cdouble}(undef, 10) .* 0
+    res = HiGHS.CWrapper.Highs_getRowsBySet(o.model.inner,
+        Cint(1), pointer(Cint[0, 0]), pointer_from_objref(num_row),
+        pointer(lower), pointer(upper), pointer_from_objref(num_nz),
+        pointer(matrix_start), pointer(matrix_index), pointer(matrix_value),
+    )
+    @test res == 1
+    # @test num_row[] == 1
+    @test matrix_start == Cint[0]
+    @info "matrix_index $(matrix_index)"
+    @info "matrix_value $(matrix_value)"
+    
+    # l3 = MOI.get(o, MOI.ListOfConstraintIndices{MOI.ScalarAffineFunction{Float64}, MOI.Interval{Float64}}())
+    # @test length(l3) == 1
+end
+
+@testset "Get row and column constraints" begin
+    o = HiGHS.Optimizer()
+    @test isempty(MOI.get(o, MOI.ListOfConstraintIndices{MOI.SingleVariable, MOI.Interval{Float64}}()))
+    x1 = MOI.add_variable(o)
+    @test isempty(MOI.get(o, MOI.ListOfConstraintIndices{MOI.SingleVariable, MOI.Interval{Float64}}()))
+    MOI.add_constraint(o, MOI.SingleVariable(x1), MOI.Interval(0.0, 1.0))
+    l1 = MOI.get(o, MOI.ListOfConstraintIndices{MOI.SingleVariable, MOI.Interval{Float64}}())
+    @test length(l1) == 1
+    @test first(l1).value == x1.value
+    (x2, _) = MOI.add_constrained_variable(o, MOI.Interval(-1.0, 1.0))
+    l2 = MOI.get(o, MOI.ListOfConstraintIndices{MOI.SingleVariable, MOI.Interval{Float64}}())
+    @test length(l2) == 2
+    @test map(ci -> ci.value, l2) == [0, 1]
+    @test isempty(MOI.get(o, MOI.ListOfConstraintIndices{MOI.ScalarAffineFunction{Float64}, MOI.Interval{Float64}}()))
+    c1 = MOI.add_constraint(o,
+        MOI.ScalarAffineFunction([
+                MOI.ScalarAffineTerm(3.0, x1),
+                MOI.ScalarAffineTerm(2.0, x2),
+            ], 0.0),
+        MOI.Interval(-3.0, 6.0),
+    )
+    # l3 = MOI.get(o, MOI.ListOfConstraintIndices{MOI.ScalarAffineFunction{Float64}, MOI.Interval{Float64}}())
+    # @test length(l3) == 1
+end

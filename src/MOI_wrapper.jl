@@ -118,6 +118,95 @@ function MOI.get(o::Optimizer, ::MOI.ListOfVariableIndices)
     return [MOI.VariableIndex(j) for j in 0:(ncols-1)]
 end
 
+function MOI.get(o::Optimizer, ::MOI.ListOfConstraints)
+    ncols = MOI.get(o, MOI.NumberOfVariables())
+    constraint_types = Vector{Tuple{Type,Type}}()
+    if ncols == 0
+        return constraint_types
+    end
+    lower = fill(NaN, ncols)
+    upper = fill(NaN, ncols)
+    num_nz = Ref(Cint(0))
+    null_ptr = Ptr{Cint}(0)
+    null_ptr_double = Ptr{Cdouble}(0)
+    num_cols_obtained = Ref{Cint}(0)
+    _ = CWrapper.Highs_getColsByRange(
+        o.model.inner,
+        Cint(0), Cint(total_ncols - 1),
+        pointer_from_objref(num_cols_obtained), null_ptr_double,
+        pointer(lower), pointer(upper),
+        pointer_from_objref(num_nz), null_ptr, null_ptr, null_ptr_double
+    )
+    if num_cols_obtained[] <= 0
+        error("Unexpected non-positive number of columns: $(num_cols_obtained[])")
+    end
+    if any(isfinite, lower) || any(isfinite, upper)
+        push!(constraint_types, (MOI.SingleVariable, MOI.Interval{Float64}))
+    end
+    nrows = MOI.get(o, MOI.NumberOfConstraints{MOI.ScalarAffineFunction{Float64}, MOI.Interval{Float64}}())
+    if nrows > 0
+        push!(constraint_types, (MOI.ScalarAffineFunction{Float64}, MOI.Interval{Float64}))
+    end
+    return constraint_types
+end
+
+function MOI.get(o::Optimizer, ::MOI.ListOfConstraintIndices{MOI.SingleVariable, MOI.Interval{Float64}})
+    ncols = MOI.get(o, MOI.NumberOfVariables())
+    constraints = Vector{MOI.ConstraintIndex{MOI.SingleVariable, MOI.Interval{Float64}}}()
+    if ncols == 0
+        return constraints
+    end
+    lower = fill(NaN, ncols)
+    upper = fill(NaN, ncols)
+    num_nz = Ref{Cint}(0)
+    num_cols_obtained = Ref{Cint}(0)
+    null_ptr = Ptr{Cint}(0)
+    null_ptr_double = Ptr{Cdouble}(0)
+    num_cols_obtained = Ref{Cint}(0)
+    _ = CWrapper.Highs_getColsByRange(
+        o.model.inner,
+        Cint(0), Cint(ncols - 1),
+        pointer_from_objref(num_cols_obtained), null_ptr_double,
+        pointer(lower), pointer(upper),
+        pointer_from_objref(num_nz), null_ptr, null_ptr, null_ptr_double
+    )
+    for j in 1:ncols
+        if isfinite(lower[j]) || isfinite(upper[j])
+            push!(constraints,
+                MOI.ConstraintIndex{MOI.SingleVariable, MOI.Interval{Float64}}(j-1)
+            )
+        end
+    end
+    return constraints
+end
+
+function MOI.get(o::Optimizer, ::MOI.ListOfConstraintIndices{F, S}) where {F <: MOI.ScalarAffineFunction{Float64}, S <: MOI.Interval{Float64}}
+    nrows = MOI.get(o, MOI.NumberOfConstraints{F, S}())
+    constraints = Vector{MOI.ConstraintIndex{F, S}}()
+    if nrows == 0
+        return constraints
+    end
+    number_rows = Ref{Cint}(0)
+    lower = fill(NaN, nrows)
+    upper = fill(NaN, nrows)
+    num_nz = Ref(Cint(0))
+    null_ptr = Ptr{Cint}(0)
+    null_ptr_double = Ptr{Cdouble}(0)
+    num_cols_obtained = Ref{Cint}(0)
+    # TODO query rows
+    CWrapper.Highs_getRowsByRange(
+        o.model.inner, Cint(0), Cint(nrows-1), pointer_from_objref(number_rows),
+        pointer(lower), pointer(upper),
+        pointer_from_objref(num_nz), matrix_start, matrix_index, matrix_value,
+    )
+    return constraints
+end
+
+function Highs_getRowsByRange(highs, from_row::Cint, to_row::Cint, num_row, lower, upper, num_nz, matrix_start, matrix_index, matrix_value)
+    ccall((:Highs_getRowsByRange, libhighs), Cint, (Ptr{Cvoid}, Cint, Cint, Ptr{Cint}, Ptr{Cdouble}, Ptr{Cdouble}, Ptr{Cint}, Ptr{Cint}, Ptr{Cint}, Ptr{Cdouble}), highs, from_row, to_row, num_row, lower, upper, num_nz, matrix_start, matrix_index, matrix_value)
+end
+
+
 MOI.get(::Optimizer, ::MOI.ObjectiveFunctionType) = MOI.ScalarAffineFunction{Float64}
 
 function MOI.set(o::Optimizer, ::MOI.ObjectiveFunction{F}, func::F) where {F <: MOI.ScalarAffineFunction{Float64}}
