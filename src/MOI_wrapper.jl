@@ -1,6 +1,8 @@
 import MathOptInterface
 const MOI = MathOptInterface
 
+@enum(BoundEnum, NONE, LESS_THAN, GREATER_THAN, LESS_AND_GREATER_THAN, INTERVAL, EQUAL_TO)
+
 mutable struct Optimizer <: MOI.AbstractOptimizer
     model::ManagedHiGHS
     objective_sense::MOI.OptimizationSense
