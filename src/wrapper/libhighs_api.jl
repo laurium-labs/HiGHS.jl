@@ -22,6 +22,14 @@ function Highs_writeModel(highs, filename)
     ccall((:Highs_writeModel, libhighs), Cint, (Ptr{Cvoid}, Cstring), highs, filename)
 end
 
+function Highs_clearModel(highs)
+    ccall((:Highs_clearModel, libhighs), Cint, (Ptr{Cvoid},), highs)
+end
+
+function Highs_runQuiet(highs)
+    ccall((:Highs_runQuiet, libhighs), Cint, (Ptr{Cvoid},), highs)
+end
+
 function Highs_run(highs)
     ccall((:Highs_run, libhighs), Cint, (Ptr{Cvoid},), highs)
 end
@@ -70,6 +78,10 @@ function Highs_getHighsStringOptionValue(highs, option, value)
     ccall((:Highs_getHighsStringOptionValue, libhighs), Cint, (Ptr{Cvoid}, Cstring, Cstring), highs, option, value)
 end
 
+function Highs_resetHighsOptions(highs)
+    ccall((:Highs_resetHighsOptions, libhighs), Cint, (Ptr{Cvoid},), highs)
+end
+
 function Highs_getHighsIntInfoValue(highs, info, value)
     ccall((:Highs_getHighsIntInfoValue, libhighs), Cint, (Ptr{Cvoid}, Cstring, Ptr{Cint}), highs, info, value)
 end
@@ -88,6 +100,18 @@ end
 
 function Highs_getModelStatus(highs, scaled_model::Cint)
     ccall((:Highs_getModelStatus, libhighs), Cint, (Ptr{Cvoid}, Cint), highs, scaled_model)
+end
+
+function Highs_getObjectiveValue(highs)
+    ccall((:Highs_getObjectiveValue, libhighs), Cdouble, (Ptr{Cvoid},), highs)
+end
+
+function Highs_getIterationCount(highs)
+    ccall((:Highs_getIterationCount, libhighs), Cint, (Ptr{Cvoid},), highs)
+end
+
+function Highs_getSimplexIterationCount(highs)
+    ccall((:Highs_getSimplexIterationCount, libhighs), Cint, (Ptr{Cvoid},), highs)
 end
 
 function Highs_getBasicVariables(highs, basic_variables)
@@ -116,6 +140,18 @@ end
 
 function Highs_getReducedColumn(highs, col::Cint, col_vector, col_num_nz, col_indices)
     ccall((:Highs_getReducedColumn, libhighs), Cint, (Ptr{Cvoid}, Cint, Ptr{Cdouble}, Ptr{Cint}, Ptr{Cint}), highs, col, col_vector, col_num_nz, col_indices)
+end
+
+function Highs_setBasis(highs, colstatus, rowstatus)
+    ccall((:Highs_setBasis, libhighs), Cint, (Ptr{Cvoid}, Ptr{Cint}, Ptr{Cint}), highs, colstatus, rowstatus)
+end
+
+function Highs_setLogicalBasis(highs)
+    ccall((:Highs_setLogicalBasis, libhighs), Cint, (Ptr{Cvoid},), highs)
+end
+
+function Highs_getHighsRunTime(highs)
+    ccall((:Highs_getHighsRunTime, libhighs), Cdouble, (Ptr{Cvoid},), highs)
 end
 
 function Highs_addRow(highs, lower::Cdouble, upper::Cdouble, num_new_nz::Cint, indices, values)
@@ -230,6 +266,10 @@ function Highs_deleteRowsByMask(highs, mask)
     ccall((:Highs_deleteRowsByMask, libhighs), Cint, (Ptr{Cvoid}, Ptr{Cint}), highs, mask)
 end
 
+function Highs_getHighsInfinity(highs)
+    ccall((:Highs_getHighsInfinity, libhighs), Cdouble, (Ptr{Cvoid},), highs)
+end
+
 function Highs_getNumCols(highs)
     ccall((:Highs_getNumCols, libhighs), Cint, (Ptr{Cvoid},), highs)
 end
@@ -240,4 +280,12 @@ end
 
 function Highs_getNumNz(highs)
     ccall((:Highs_getNumNz, libhighs), Cint, (Ptr{Cvoid},), highs)
+end
+
+function Highs_highsModelStatusToChar(highs, int_highs_model_status)
+    ccall((:Highs_highsModelStatusToChar, libhighs), Cstring, (Ptr{Cvoid}, Cint), highs, int_highs_model_status)
+end
+
+function Highs_primalDualStatusToChar(highs, int_primal_dual_status)
+    ccall((:Highs_primalDualStatusToChar, libhighs), Cstring, (Ptr{Cvoid}, Cint), highs, int_primal_dual_status)
 end
