@@ -75,12 +75,63 @@ function MOI.add_constrained_variable(o::Optimizer, set::S) where {S <: MOI.Inte
     return (MOI.VariableIndex(col_idx), MOI.ConstraintIndex{MOI.SingleVariable, MOI.Interval{Float64}}(col_idx))
 end
 
-MOI.supports_constraint(::Optimizer, ::MOI.SingleVariable, ::MOI.Interval) = true
-
 function MOI.add_constraint(o::Optimizer, sg::MOI.SingleVariable, set::MOI.Interval)
     var_idx = Cint(sg.variable.value)
     _ = Highs_changeColBounds(o, var_idx, Cdouble(set.lower), Cdouble(set.upper))
     return
+end
+
+MOI.supports_constraint(::Optimizer, ::MOI.SingleVariable, ::Union{MOI.Interval, MOI.LessThan,MOI.GreaterThan}) = true
+function MOI.supports_constraint(::Optimizer, ::MOI.SingleVariable, ::MOI.Interval) 
+    true
+end
+function MOI.supports_constraint(::Optimizer, ::Type{MOI.SingleVariable}, ::Type{MOI.Interval}) 
+    true
+end
+function MOI.supports_constraint(::Optimizer, ::Type{MOI.SingleVariable}, ::Type{MOI.Interval{Float64}}) 
+    true
+end
+function MOI.get(o::Optimizer, ::MOI.ConstraintFunction, ci::MOI.ConstraintIndex{MOI.SingleVariable, <: Union{MOI.Interval, MOI.LessThan, MOI.GreaterThan}})
+    return MOI.SingleVariable(MOI.VariableIndex(ci.value))
+end
+
+function MOI.get(o::Optimizer, ::MOI.ConstraintSet, ci::MOI.ConstraintIndex{MOI.SingleVariable, MOI.Interval{Float64}})
+    var_idx = Cint(ci.value)
+    num_col = Ref{Cint}(0)
+    num_nz = Ref{Cint}(0)
+    lower = Ref{Cdouble}()
+    upper = Ref{Cdouble}()
+    _ = Highs_getColsByRange(o.inner, var_idx, var_idx, num_col, C_NULL, lower, upper, num_nz, C_NULL, C_NULL, C_NULL)
+    num_col[] == 1 || error("Unexpected HiGHS state, number of columns should be one for valid range, is $(num_col[])")
+    return MOI.Interval(lower[], upper[])
+end
+
+function MOI.add_constraint(o::Optimizer, sg::MOI.SingleVariable, set::MOI.LessThan)
+    ci_interval = MOI.ConstraintIndex{MOI.SingleVariable, MOI.Interval{Float64}}(sg.variable.value)
+    interval_set = MOI.get(o, MOI.ConstraintSet(), ci_interval)
+    if set.upper <= interval_set.upper
+        _ = Highs_changeColBounds(o.inner, Cint(sg.variable.value), Cdouble(interval_set.lower), Cdouble(set.upper))
+    end
+    return MOI.ConstraintIndex{MOI.SingleVariable, MOI.LessThan{Float64}}(sg.variable.value)
+end
+
+function MOI.get(o::Optimizer, ::MOI.ConstraintSet, ci::MOI.ConstraintIndex{MOI.SingleVariable, MOI.LessThan{Float64}})
+    interval_set = MOI.get(o, MOI.ConstraintSet(), MOI.ConstraintIndex{MOI.SingleVariable, MOI.Interval{Float64}}(ci.value))
+    return MOI.LessThan(interval_set.upper)
+end
+
+function MOI.get(o::Optimizer, ::MOI.ConstraintSet, ci::MOI.ConstraintIndex{MOI.SingleVariable, MOI.GreaterThan{Float64}})
+    interval_set = MOI.get(o, MOI.ConstraintSet(), MOI.ConstraintIndex{MOI.SingleVariable, MOI.Interval{Float64}}(ci.value))
+    return MOI.GreaterThan(interval_set.lower)
+end
+
+function MOI.add_constraint(o::Optimizer, sg::MOI.SingleVariable, set::MOI.GreaterThan)
+    ci_interval = MOI.ConstraintIndex{MOI.SingleVariable, MOI.Interval{Float64}}(sg.variable.value)
+    interval_set = MOI.get(o, MOI.ConstraintSet(), ci_interval)
+    if set.lower >= interval_set.lower
+        _ = Highs_changeColBounds(o.inner, Cint(sg.variable.value), Cdouble(set.lower), Cdouble(interval_set.upper))
+    end
+    return MOI.ConstraintIndex{MOI.SingleVariable, MOI.GreaterThan{Float64}}(sg.variable.value)
 end
 
 function MOI.get(o::Optimizer, ::MOI.NumberOfConstraints{MOI.ScalarAffineFunction{Float64}, MOI.Interval{Float64}})
@@ -89,6 +140,8 @@ function MOI.get(o::Optimizer, ::MOI.NumberOfConstraints{MOI.ScalarAffineFunctio
 end
 
 MOI.supports_constraint(::Optimizer, ::MOI.ScalarAffineFunction, ::MOI.Interval) = true
+MOI.supports_constraint(::Optimizer, ::Type{MOI.ScalarAffineFunction}, ::Type{MOI.Interval}) = true
+MOI.supports_constraint(::Optimizer, ::Type{MOI.ScalarAffineFunction{Float64}}, ::Type{MOI.Interval{Float64}}) = true
 
 function MOI.add_constraint(o::Optimizer, func::MOI.ScalarAffineFunction, set::MOI.Interval)
     number_nonzeros = length(func.terms)
@@ -331,6 +384,33 @@ end
 function MOI.get(o::Optimizer, ::MOI.VariableName, v::MOI.VariableIndex)
     return get(o.variable_map, v, "")
 end
+function MOI.get(o::Optimizer, ::MOI.VariablePrimal, v::MOI.VariableIndex)
+    # MOI.check_result_index_bounds(o, v)
+    numcol = Highs_getNumCols(o.inner)
+    numrow = Highs_getNumRows(o.inner)
+    colValue = Array{Cdouble, 1}(undef, numcol)
+    colDual = Array{Cdouble, 1}(undef, numcol)
+    rowValue = Array{Cdouble, 1}(undef, numrow)
+    rowDual = Array{Cdouble, 1}(undef, numrow)
+
+    Highs_getSolution(o.inner,colValue, colDual,rowValue,rowDual)
+    return colValue[v.value+1]
+    # primal_status = MOI.get(o, MOI.PrimalStatus())
+    # if primal_status == MOI.INFEASIBILITY_CERTIFICATE
+
+    #     # We claim ownership of the pointer returned by Clp_unboundedRay.
+    # elseif primal_status == MOI.FEASIBLE_POINT
+    #     return _unsafe_wrap_clp_array(
+    #         model,
+    #         Clp_getColSolution,
+    #         Clp_getNumCols(model),
+    #         x.value,
+    #     )
+    # else
+    #     error("Primal solution not available")
+    # end
+end
+
 
 function MOI.set(o::Optimizer, ::MOI.VariableName, v::MOI.VariableIndex, name::String)
     o.variable_map[v] = name
